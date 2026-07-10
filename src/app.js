@@ -21,6 +21,25 @@ if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 });
 app.use('/api/', limiter);
 
+
+app.get('/', (req, res) => {
+  res.status(200).json({
+    success: true,
+    application: 'Dealer Platform Backend',
+    version: '1.0.0',
+    status: 'Running',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/healthz', (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: 'healthy',
+  });
+});
+
 app.use('/api/v1', routes);
 
 app.use(notFound);
