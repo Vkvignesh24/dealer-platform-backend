@@ -2,12 +2,13 @@ const router = require('express').Router();
 const c = require('../controllers/productController');
 const { authenticate, optionalAuth, authorize } = require('../middleware/auth');
 
-// Public/browse endpoints — optionalAuth lets dealers/admins see extra fields on get().
-router.get('/', c.list);
-router.get('/featured', c.featured);
-router.get('/recent', c.recent);
-router.get('/recommended', c.recommended);
-router.get('/categories', c.categories);
+// Public/browse endpoints — optionalAuth lets dealers/admins see sold
+// inventory and extra fields; customers/anonymous visitors never see sold.
+router.get('/', optionalAuth, c.list);
+router.get('/featured', optionalAuth, c.featured);
+router.get('/recent', optionalAuth, c.recent);
+router.get('/recommended', optionalAuth, c.recommended);
+router.get('/categories', optionalAuth, c.categories);
 router.get('/:id', optionalAuth, c.get);
 
 // Dealer/admin management.

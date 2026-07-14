@@ -5,6 +5,7 @@ const LEAD_STATUSES = [
   'contacted',
   'interested',
   'test_drive',
+  'visited',
   'negotiation',
   'booked',
   'sold',
@@ -41,6 +42,12 @@ const leadSchema = new mongoose.Schema(
     status: { type: String, enum: LEAD_STATUSES, default: 'new', index: true },
     history: [statusHistorySchema],
     notes: [noteSchema],
+
+    // Sale conversion tracking — restored to their pre-sale values when a
+    // sale is reversed (see saleController.reverse).
+    saleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Sale', default: null },
+    converted: { type: Boolean, default: false },
+    convertedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

@@ -2,6 +2,8 @@ const Product = require('../../models/Product');
 const Lead = require('../../models/Lead');
 const LoanRequest = require('../../models/LoanRequest');
 const Wishlist = require('../../models/Wishlist');
+const Sale = require('../../models/Sale');
+const Reservation = require('../../models/Reservation');
 const { ok, fail } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
 
@@ -63,14 +65,96 @@ exports.getOne = asyncHandler(async (req, res) => {
   // Engagement counts — additive only, the product object's own fields are
   // unchanged. Powers the Lead Count / Loan Requests / Interested
   // Customers stats the brief asks for on the Product Detail page.
-  const [leadCount, loanCount, wishlistCount] = await Promise.all([
+  const [leadCount, loanCount, wishlistCount, sale, reservation, leads, loans, saleHistory, reservationHistory] = await Promise.all([
     Lead.countDocuments({ product: product._id }),
     LoanRequest.countDocuments({ product: product._id }),
     Wishlist.countDocuments({ product: product._id }),
+    product.status === 'sold'
+      ? Sale.findOne({ product: product._id, status: 'active' }).populate('customer', 'name email phone').lean()
+      : null,
+    product.status === 'reserved'
+      ? Reservation.findOne({ product: product._id, status: 'active' }).populate('customer', 'name email phone').lean()
+      : null,
+    Lead.find({ product: product._id }).sort('-createdAt').limit(4).lean(),
+    LoanRequest.find({ product: product._id }).sort('-createdAt').limit(3).lean(),
+    // Every sale this product has ever had — sold, reversed, sold again.
+    // Nothing here is ever deleted; this is the audit trail.
+    Sale.find({ product: product._id }).populate('customer', 'name email phone').sort('-soldDate').lean(),
+    Reservation.find({ product: product._id }).populate('customer', 'name email phone').sort('-reservedAt').lean(),
   ]);
 
-  ok(res, { ...product, leadCount, loanCount, wishlistCount }, 'Product');
+  const timeline = buildProductTimeline(product, saleHistory, reservationHistory, leads);
+
+  ok(res, {
+    ...product, leadCount, loanCount, wishlistCount, sale, reservation, leads, loans,
+    saleHistory, reservationHistory, timeline,
+  }, 'Product');
 });
+
+/**
+ * Merges product statusHistory + every sale + every reservation + lead
+ * creation into a single chronological feed for the "Activity Timeline"
+ * card. Nothing feeding this is ever deleted, so the timeline is a
+ * permanent record — a product can show "Sold to Vicky", "Sale Reversed",
+ * "Reserved by Arun", "Sold to Arun" all in sequence.
+ */
+function buildProductTimeline(product, sales, reservations, leads) {
+  const events = [];
+
+  events.push({ at: product.createdAt, type: 'created', label: 'Product Created' });
+
+  (product.statusHistory || []).forEach((h) => {
+    if (h.status === 'available' && events.length === 1) return; // skip redundant initial entry
+    events.push({ at: h.at, type: 'status', label: statusLabel(h.status), note: h.note });
+  });
+
+  (leads || []).forEach((l) => {
+    events.push({ at: l.createdAt, type: 'lead', label: `Enquiry from ${l.customerName}` });
+  });
+
+  (reservations || []).forEach((r) => {
+    events.push({
+      at: r.reservedAt,
+      type: 'reservation',
+      label: `Reserved by ${r.customer?.name || 'customer'}`,
+      note: r.bookingAmount ? `Booking amount ₹${Number(r.bookingAmount).toLocaleString('en-IN')}` : undefined,
+    });
+    if (r.releasedAt && r.status === 'cancelled') {
+      events.push({ at: r.releasedAt, type: 'reservation_released', label: 'Reservation released' });
+    }
+  });
+
+  (sales || []).forEach((s) => {
+    events.push({
+      at: s.soldDate,
+      type: 'sale',
+      label: `Sold to ${s.customer?.name || 'customer'}`,
+      note: `₹${Number(s.salePrice).toLocaleString('en-IN')}`,
+    });
+    if (s.status === 'reversed' && s.reversedAt) {
+      events.push({
+        at: s.reversedAt,
+        type: 'reverse',
+        label: 'Sale Reversed',
+        note: s.reverseReason ? s.reverseReason.replace(/_/g, ' ') : undefined,
+      });
+    }
+  });
+
+  return events
+    .filter((e) => e.at)
+    .sort((a, b) => new Date(a.at) - new Date(b.at));
+}
+
+function statusLabel(status) {
+  const map = {
+    available: 'Marked Available',
+    reserved: 'Reserved',
+    sold: 'Sold',
+    archived: 'Archived',
+  };
+  return map[status] || `Status changed to ${status}`;
+}
 
 exports.update = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.id);
@@ -79,9 +163,14 @@ exports.update = asyncHandler(async (req, res) => {
   for (const key of EDITABLE) {
     if (Object.prototype.hasOwnProperty.call(req.body, key)) product[key] = req.body[key];
   }
-  if (req.body.status && STATUSES.includes(req.body.status) && req.body.status !== product.status) {
+  if (req.body.status && req.body.status !== product.status) {
+    if (req.body.status === 'sold' || req.body.status === 'reserved') {
+      return fail(res, 'Use the Mark As Sold / Reserve Product action to change this status', 400);
+    }
+    if (!STATUSES.includes(req.body.status)) return fail(res, 'Invalid status', 400);
     product.statusHistory.push({ status: req.body.status, at: new Date(), note: 'Updated by admin', by: req.user._id });
     product.status = req.body.status;
+    if (req.body.status === 'available') product.activeReservation = null;
   }
   await product.save();
   ok(res, product, 'Product updated');
@@ -90,9 +179,16 @@ exports.update = asyncHandler(async (req, res) => {
 exports.setStatus = asyncHandler(async (req, res) => {
   const { status } = req.body || {};
   if (!STATUSES.includes(status)) return fail(res, 'Invalid status', 400);
+  if (status === 'sold') {
+    return fail(res, 'Use the "Mark As Sold" action to sell a product', 400);
+  }
+  if (status === 'reserved') {
+    return fail(res, 'Use the "Reserve Product" action to reserve a product', 400);
+  }
   const product = await Product.findById(req.params.id);
   if (!product) return fail(res, 'Product not found', 404);
   product.status = status;
+  if (status === 'available') product.activeReservation = null;
   product.statusHistory.push({ status, at: new Date(), note: 'Status changed by admin', by: req.user._id });
   await product.save();
   ok(res, product, 'Status updated');

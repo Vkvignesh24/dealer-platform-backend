@@ -1,6 +1,7 @@
 const Product = require('../../models/Product');
 const Lead = require('../../models/Lead');
 const LoanRequest = require('../../models/LoanRequest');
+const Sale = require('../../models/Sale');
 const { ok } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
 
@@ -54,25 +55,24 @@ exports.revenue = asyncHandler(async (req, res) => {
   const twelveMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
   const [monthAgg, yearAgg, soldAgg, trendAgg, dealerAgg] = await Promise.all([
-    Product.aggregate([
-      { $match: { status: 'sold', updatedAt: { $gte: monthStart } } },
-      { $group: { _id: null, value: { $sum: '$price' } } },
+    Sale.aggregate([
+      { $match: { status: 'active', soldDate: { $gte: monthStart } } },
+      { $group: { _id: null, value: { $sum: '$salePrice' } } },
     ]),
-    Product.aggregate([
-      { $match: { status: 'sold', updatedAt: { $gte: yearStart } } },
-      { $group: { _id: null, value: { $sum: '$price' } } },
+    Sale.aggregate([
+      { $match: { status: 'active', soldDate: { $gte: yearStart } } },
+      { $group: { _id: null, value: { $sum: '$salePrice' } } },
     ]),
-    Product.aggregate([
-      { $match: { status: 'sold' } },
-      { $group: { _id: null, value: { $sum: '$price' } } },
+    Sale.aggregate([{ $match: { status: 'active' } }, { $group: { _id: null, value: { $sum: '$salePrice' } } }]),
+    Sale.aggregate([
+      { $match: { status: 'active', soldDate: { $gte: twelveMonthsAgo } } },
+      { $group: { _id: { y: { $year: '$soldDate' }, m: { $month: '$soldDate' } }, value: { $sum: '$salePrice' }, count: { $sum: 1 } } },
     ]),
-    Product.aggregate([
-      { $match: { status: 'sold', updatedAt: { $gte: twelveMonthsAgo } } },
-      { $group: { _id: { y: { $year: '$updatedAt' }, m: { $month: '$updatedAt' } }, value: { $sum: '$price' }, count: { $sum: 1 } } },
-    ]),
-    Product.aggregate([
-      { $match: { status: 'sold' } },
-      { $group: { _id: '$createdBy', value: { $sum: '$price' }, count: { $sum: 1 } } },
+    Sale.aggregate([
+      { $match: { status: 'active' } },
+      { $lookup: { from: 'products', localField: 'product', foreignField: '_id', as: 'p' } },
+      { $unwind: { path: '$p', preserveNullAndEmptyArrays: true } },
+      { $group: { _id: '$p.createdBy', value: { $sum: '$salePrice' }, count: { $sum: 1 } } },
       { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'dealer' } },
       { $unwind: { path: '$dealer', preserveNullAndEmptyArrays: true } },
       { $project: { _id: 1, value: 1, count: 1, dealerName: '$dealer.name' } },

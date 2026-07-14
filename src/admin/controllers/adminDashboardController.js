@@ -2,6 +2,7 @@ const Product = require('../../models/Product');
 const Lead = require('../../models/Lead');
 const LoanRequest = require('../../models/LoanRequest');
 const User = require('../../models/User');
+const Sale = require('../../models/Sale');
 const { ok } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
 
@@ -33,6 +34,9 @@ exports.summary = asyncHandler(async (req, res) => {
     categoryAgg,
     newCustomersThisMonth,
     recentCustomers,
+    leadStatusAgg,
+    loanStatusAgg,
+    avgSaleAgg,
   ] = await Promise.all([
     Product.countDocuments({}),
     User.countDocuments({ role: 'customer' }),
@@ -46,17 +50,14 @@ exports.summary = asyncHandler(async (req, res) => {
       { $match: { status: { $in: ['available', 'reserved'] } } },
       { $group: { _id: null, value: { $sum: '$price' } } },
     ]),
-    Product.aggregate([
-      { $match: { status: 'sold' } },
-      { $group: { _id: null, value: { $sum: '$price' } } },
+    Sale.aggregate([{ $match: { status: 'active' } }, { $group: { _id: null, value: { $sum: '$salePrice' } } }]),
+    Sale.aggregate([
+      { $match: { status: 'active', soldDate: { $gte: monthStart } } },
+      { $group: { _id: null, value: { $sum: '$salePrice' } } },
     ]),
-    Product.aggregate([
-      { $match: { status: 'sold', updatedAt: { $gte: monthStart } } },
-      { $group: { _id: null, value: { $sum: '$price' } } },
-    ]),
-    Product.aggregate([
-      { $match: { status: 'sold', updatedAt: { $gte: yearStart } } },
-      { $group: { _id: null, value: { $sum: '$price' } } },
+    Sale.aggregate([
+      { $match: { status: 'active', soldDate: { $gte: yearStart } } },
+      { $group: { _id: null, value: { $sum: '$salePrice' } } },
     ]),
     Product.countDocuments({
       status: { $in: ['available', 'reserved'] },
@@ -73,10 +74,23 @@ exports.summary = asyncHandler(async (req, res) => {
     ]),
     User.countDocuments({ role: 'customer', createdAt: { $gte: monthStart } }),
     User.find({ role: 'customer' }).sort('-createdAt').limit(6).lean(),
+    Lead.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+    LoanRequest.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
+    Sale.aggregate([{ $match: { status: 'active' } }, { $group: { _id: null, avg: { $avg: '$salePrice' }, count: { $sum: 1 } } }]),
   ]);
 
   const inventoryValue = sumOf(inventoryAgg);
   const soldValue = sumOf(soldAgg);
+
+  const leadBreakdown = leadStatusAgg.reduce((acc, r) => { acc[r._id] = r.n; return acc; }, {});
+  const totalLeadCount = Object.values(leadBreakdown).reduce((a, b) => a + b, 0);
+  const convertedLeadCount = (leadBreakdown.sold || 0) + (leadBreakdown.booked || 0);
+  const leadConversionRate = totalLeadCount ? Math.round((convertedLeadCount / totalLeadCount) * 1000) / 10 : 0;
+
+  const loanBreakdown = loanStatusAgg.reduce((acc, r) => { acc[r._id] = r.n; return acc; }, {});
+  const totalLoanCount = Object.values(loanBreakdown).reduce((a, b) => a + b, 0);
+  const approvedLoanCount = (loanBreakdown.approved || 0) + (loanBreakdown.disbursed || 0);
+  const loanConversionRate = totalLoanCount ? Math.round((approvedLoanCount / totalLoanCount) * 1000) / 10 : 0;
 
   ok(res, {
     totalProducts,
@@ -95,6 +109,12 @@ exports.summary = asyncHandler(async (req, res) => {
 
     monthlyRevenue: sumOf(monthAgg),
     yearlyRevenue: sumOf(yearAgg),
+    averageSaleValue: avgSaleAgg[0]?.avg || 0,
+    totalSalesCount: avgSaleAgg[0]?.count || 0,
+
+    leadConversionRate,
+    loanConversionRate,
+    loanStatusBreakdown: loanBreakdown,
 
     longTermUnsold,
 

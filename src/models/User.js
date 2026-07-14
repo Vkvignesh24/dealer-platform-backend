@@ -14,6 +14,22 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
     active: { type: Boolean, default: true },
+
+    // Snapshot list kept in sync by saleController; Sale collection remains
+    // the source of truth for reporting/analytics.
+    purchaseHistory: [
+      {
+        _id: false,
+        product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+        sale: { type: mongoose.Schema.Types.ObjectId, ref: 'Sale' },
+        salePrice: Number,
+        soldDate: Date,
+        // 'active' = customer currently owns this purchase. 'cancelled' =
+        // the underlying sale was reversed — kept for history, but hidden
+        // from the customer's "my purchases" view.
+        status: { type: String, enum: ['active', 'cancelled'], default: 'active' },
+      },
+    ],
   },
   { timestamps: true }
 );

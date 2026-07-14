@@ -33,6 +33,9 @@ exports.create = asyncHandler(async (req, res) => {
   const { productId, customerName, customerPhone, customerEmail, message } = req.body;
   const v = await Product.findById(productId);
   if (!v) return fail(res, 'Product not found', 404);
+  if (v.status === 'reserved' || v.status === 'sold') {
+    return fail(res, 'This product is currently unavailable for enquiries', 409);
+  }
 
   const recent = await Lead.findOne({
     product: productId,

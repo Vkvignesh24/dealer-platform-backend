@@ -1,9 +1,17 @@
 const LoanRequest = require('../models/LoanRequest');
+const Product = require('../models/Product');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 
 exports.create = asyncHandler(async (req, res) => {
   const body = { ...req.body };
+  if (body.product) {
+    const product = await Product.findById(body.product).select('status').lean();
+    if (!product) return fail(res, 'Product not found', 404);
+    if (product.status === 'reserved' || product.status === 'sold') {
+      return fail(res, 'This product is currently unavailable for loan applications', 409);
+    }
+  }
   if (req.user) body.customer = req.user._id;
   const v = await LoanRequest.create(body);
   ok(res, v, 'Loan request submitted', 201);

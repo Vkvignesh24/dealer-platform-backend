@@ -2,7 +2,7 @@ const Lead = require('../../models/Lead');
 const { ok, fail } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
 
-const STATUSES = ['new', 'contacted', 'interested', 'test_drive', 'negotiation', 'booked', 'sold', 'lost'];
+const STATUSES = ['new', 'contacted', 'interested', 'test_drive', 'visited', 'negotiation', 'booked', 'sold', 'lost'];
 
 exports.list = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -35,6 +35,7 @@ exports.getOne = asyncHandler(async (req, res) => {
   const lead = await Lead.findById(req.params.id)
     .populate({ path: 'product', select: 'name category price createdBy images', populate: { path: 'createdBy', select: 'name email phone' } })
     .populate('customer', 'name email phone')
+    .populate('saleId', 'salePrice soldDate status')
     .lean();
   if (!lead) return fail(res, 'Lead not found', 404);
   ok(res, lead, 'Lead');

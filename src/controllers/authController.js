@@ -2,7 +2,12 @@ const User = require('../models/User');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 
-exports.me = asyncHandler(async (req, res) => ok(res, req.user, 'Profile'));
+exports.me = asyncHandler(async (req, res) => {
+  const u = await User.findById(req.user._id)
+    .populate('purchaseHistory.product', 'name brand category price images')
+    .lean();
+  ok(res, u, 'Profile');
+});
 
 exports.register = asyncHandler(async (req, res) => {
   const { name, email, phone } = req.body;

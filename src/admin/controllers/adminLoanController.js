@@ -2,7 +2,7 @@ const LoanRequest = require('../../models/LoanRequest');
 const { ok, fail } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
 
-const STATUSES = ['new', 'under_review', 'bank_shared', 'approved', 'rejected'];
+const STATUSES = ['new', 'documents_pending', 'under_review', 'bank_shared', 'approved', 'rejected', 'disbursed'];
 
 exports.list = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -41,7 +41,7 @@ exports.getOne = asyncHandler(async (req, res) => {
 });
 
 exports.update = asyncHandler(async (req, res) => {
-  const { status, note } = req.body || {};
+  const { status, note, bankName, bankBranch, bankContactPerson, bankRemarks } = req.body || {};
   const loan = await LoanRequest.findById(req.params.id);
   if (!loan) return fail(res, 'Loan request not found', 404);
 
@@ -55,6 +55,10 @@ exports.update = asyncHandler(async (req, res) => {
     if (!Array.isArray(loan.notes)) loan.notes = [];
     loan.notes.push({ text: String(note).trim(), at: new Date(), by: req.user._id });
   }
+  if (bankName !== undefined) loan.bankName = bankName;
+  if (bankBranch !== undefined) loan.bankBranch = bankBranch;
+  if (bankContactPerson !== undefined) loan.bankContactPerson = bankContactPerson;
+  if (bankRemarks !== undefined) loan.bankRemarks = bankRemarks;
   await loan.save();
   ok(res, loan, 'Loan updated');
 });
@@ -66,7 +70,7 @@ exports.analytics = asyncHandler(async (req, res) => {
   const totalRequests = Object.values(breakdown).reduce((a, b) => a + b, 0);
   const approved = breakdown.approved || 0;
   const rejected = breakdown.rejected || 0;
-  const pending = (breakdown.new || 0) + (breakdown.under_review || 0) + (breakdown.bank_shared || 0);
+  const pending = (breakdown.new || 0) + (breakdown.documents_pending || 0) + (breakdown.under_review || 0) + (breakdown.bank_shared || 0);
   const approvalRate = totalRequests ? Math.round((approved / totalRequests) * 1000) / 10 : 0;
 
   ok(res, { totalRequests, approved, rejected, pending, approvalRate, statusBreakdown: breakdown }, 'Loan analytics');

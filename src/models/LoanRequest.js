@@ -1,6 +1,14 @@
 const mongoose = require('mongoose');
 
-const LOAN_STATUSES = ['new', 'under_review', 'bank_shared', 'approved', 'rejected'];
+const LOAN_STATUSES = [
+  'new',
+  'documents_pending',
+  'under_review',
+  'bank_shared',
+  'approved',
+  'rejected',
+  'disbursed',
+];
 
 const statusHistorySchema = new mongoose.Schema(
   {
@@ -36,8 +44,16 @@ const loanRequestSchema = new mongoose.Schema(
     remarks: { type: String, maxlength: 1000 },
     status: { type: String, enum: LOAN_STATUSES, default: 'new', index: true },
     dealerNote: { type: String, maxlength: 1000 },
+    // Populated once the dealer shares the file with a bank/NBFC.
+    bankName: { type: String, trim: true, maxlength: 150 },
+    bankBranch: { type: String, trim: true, maxlength: 150 },
+    bankContactPerson: { type: String, trim: true, maxlength: 150 },
+    bankRemarks: { type: String, maxlength: 1000 },
     statusHistory: [statusHistorySchema],
     notes: [noteSchema],
+    // Set when a sale disburses this loan; cleared when that sale is
+    // reversed (see saleController.reverse).
+    saleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Sale', default: null },
   },
   { timestamps: true }
 );

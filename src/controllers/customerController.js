@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Lead = require('../models/Lead');
+const Sale = require('../models/Sale');
 const { ok } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -24,12 +25,15 @@ exports.list = asyncHandler(async (req, res) => {
 
   const items = await Promise.all(
     users.map(async (u) => {
-      const leadCount = await Lead.countDocuments({ customer: u._id });
-      const interested = await Lead.find({ customer: u._id })
-        .populate('product', 'name brand')
-        .sort('-createdAt')
-        .limit(5)
-        .lean();
+      const [leadCount, purchaseCount, interested] = await Promise.all([
+        Lead.countDocuments({ customer: u._id }),
+        Sale.countDocuments({ customer: u._id, status: 'active' }),
+        Lead.find({ customer: u._id })
+          .populate('product', 'name brand')
+          .sort('-createdAt')
+          .limit(5)
+          .lean(),
+      ]);
       return {
         _id: u._id,
         name: u.name,
@@ -38,6 +42,7 @@ exports.list = asyncHandler(async (req, res) => {
         avatar: u.avatar,
         createdAt: u.createdAt,
         leadCount,
+        purchaseCount,
         interestedProducts: interested.map((x) => x.product).filter(Boolean),
       };
     })

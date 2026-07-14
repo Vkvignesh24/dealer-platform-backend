@@ -41,6 +41,13 @@ const productSchema = new mongoose.Schema(
     // Lowercased & collapsed copy of name+brand+model for forgiving search
     searchKey: { type: String, index: true },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+
+    // Denormalized pointers for fast list/detail rendering. Sale and
+    // Reservation documents remain the source of truth — these fields are
+    // written only by saleController/reservationController and are cleared
+    // when a sale/reservation is reversed.
+    activeSale: { type: mongoose.Schema.Types.ObjectId, ref: 'Sale', default: null },
+    activeReservation: { type: mongoose.Schema.Types.ObjectId, ref: 'Reservation', default: null },
   },
   { timestamps: true }
 );

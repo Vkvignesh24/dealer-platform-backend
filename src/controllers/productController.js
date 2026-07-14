@@ -1,7 +1,15 @@
 const Product = require('../models/Product');
 const Lead = require('../models/Lead');
+const Sale = require('../models/Sale');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+
+// Dealer/admin see the full inventory including sold items (they manage
+// it). Customers (and anonymous visitors) never see `sold` products in
+// browse surfaces — only inside their own purchase history.
+function isDealerOrAdmin(req) {
+  return !!(req.user && (req.user.role === 'dealer' || req.user.role === 'admin'));
+}
 
 // Required spec keys per category. Unknown categories are allowed through.
 const SPEC_REQUIREMENTS = {
@@ -66,8 +74,19 @@ exports.list = asyncHandler(async (req, res) => {
   if (year) q.year = Number(year);
   if (location) q.location = new RegExp(String(location).trim(), 'i');
   if (featured !== undefined) q.featured = featured === 'true' || featured === true;
-  if (status) q.status = status;
-  else q.status = { $ne: 'archived' };
+
+  const privileged = isDealerOrAdmin(req);
+  if (status) {
+    // Anonymous/customer requests can never explicitly ask for sold or
+    // archived inventory — those only exist for dealer/admin management.
+    if (!privileged && (status === 'sold' || status === 'archived')) {
+      q.status = 'available';
+    } else {
+      q.status = status;
+    }
+  } else {
+    q.status = privileged ? { $ne: 'archived' } : { $nin: ['archived', 'sold'] };
+  }
   if (minPrice || maxPrice) {
     q.price = {};
     if (minPrice) q.price.$gte = Number(minPrice);
@@ -136,7 +155,8 @@ exports.featured = asyncHandler(async (req, res) => {
 });
 
 exports.recent = asyncHandler(async (req, res) => {
-  const items = await Product.find({ status: { $ne: 'archived' } })
+  const q = isDealerOrAdmin(req) ? { status: { $ne: 'archived' } } : { status: { $nin: ['archived', 'sold'] } };
+  const items = await Product.find(q)
     .sort('-createdAt')
     .limit(10)
     .lean();
@@ -153,18 +173,31 @@ exports.recommended = asyncHandler(async (req, res) => {
 });
 
 exports.categories = asyncHandler(async (req, res) => {
-  const cats = await Product.distinct('category', { status: { $ne: 'archived' } });
+  const q = isDealerOrAdmin(req) ? { status: { $ne: 'archived' } } : { status: { $nin: ['archived', 'sold'] } };
+  const cats = await Product.distinct('category', q);
   ok(res, cats.filter(Boolean).sort(), 'Categories');
 });
 
 exports.get = asyncHandler(async (req, res) => {
+  const existing = await Product.findById(req.params.id).lean();
+  if (!existing) return fail(res, 'Product not found', 404);
+
+  // Sold products are hidden from everyone except dealer/admin and the
+  // customer who actually purchased them (their purchase history).
+  if (existing.status === 'sold' && !isDealerOrAdmin(req)) {
+    const owns = req.user
+      ? await Sale.exists({ product: existing._id, customer: req.user._id })
+      : false;
+    if (!owns) return fail(res, 'Product not found', 404);
+  }
+
   const v = await Product.findByIdAndUpdate(
     req.params.id,
     { $inc: { views: 1 } },
     { new: true }
   ).lean();
-  if (!v) return fail(res, 'Product not found', 404);
-  if (req.user && (req.user.role === 'dealer' || req.user.role === 'admin')) {
+
+  if (isDealerOrAdmin(req)) {
     const [leadCount, interestedCount] = await Promise.all([
       Lead.countDocuments({ product: v._id }),
       Lead.countDocuments({ product: v._id, status: 'interested' }),
@@ -172,6 +205,11 @@ exports.get = asyncHandler(async (req, res) => {
     v.leadCount = leadCount;
     v.interestedCount = interestedCount;
   }
+
+  // Guides the customer app: reserved products stay visible but with
+  // customer actions (loan/interested/call/whatsapp/wishlist) disabled.
+  v.restrictedActions = v.status === 'reserved' || v.status === 'sold';
+
   ok(res, v, 'Product');
 });
 
@@ -187,6 +225,11 @@ exports.create = asyncHandler(async (req, res) => {
 });
 
 exports.update = asyncHandler(async (req, res) => {
+  // Status changes to sold/reserved must go through the dedicated
+  // sale/reservation endpoints so a business record is always created.
+  if (req.body.status === 'sold' || req.body.status === 'reserved') {
+    return fail(res, 'Use the Mark As Sold / Reserve Product flow to change this status', 400);
+  }
   if (req.body.specifications || req.body.category) {
     const existing = await Product.findById(req.params.id).lean();
     if (!existing) return fail(res, 'Product not found', 404);
@@ -208,10 +251,20 @@ exports.update = asyncHandler(async (req, res) => {
 exports.updateStatus = asyncHandler(async (req, res) => {
   const { status, note } = req.body;
   if (!Product.STATUSES.includes(status)) return fail(res, 'Invalid status', 400);
+
+  // These two transitions must create an auditable business record
+  // (who bought it / who booked it) — see POST /sales and POST /reservations.
+  if (status === 'sold') {
+    return fail(res, 'Use the "Mark As Sold" flow (POST /sales) to sell a product', 400);
+  }
+  if (status === 'reserved') {
+    return fail(res, 'Use the "Reserve Product" flow (POST /reservations) to reserve a product', 400);
+  }
+
   const p = await Product.findById(req.params.id);
   if (!p) return fail(res, 'Product not found', 404);
-  // Block illegal transitions; sold/archived are terminal except dealer can re-open.
   p.status = status;
+  if (status === 'available') p.activeReservation = null;
   p.statusHistory.push({ status, note, by: req.user?._id });
   await p.save();
   ok(res, p, 'Status updated');

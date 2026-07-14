@@ -2,6 +2,7 @@ const User = require('../../models/User');
 const Lead = require('../../models/Lead');
 const LoanRequest = require('../../models/LoanRequest');
 const Wishlist = require('../../models/Wishlist');
+const Sale = require('../../models/Sale');
 const { ok, fail } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
 
@@ -23,12 +24,13 @@ exports.list = asyncHandler(async (req, res) => {
 
   const items = await Promise.all(
     customers.map(async (c) => {
-      const [totalLeads, loanRequests, interestedProducts] = await Promise.all([
+      const [totalLeads, loanRequests, interestedProducts, purchaseCount] = await Promise.all([
         Lead.countDocuments({ $or: [{ customer: c._id }, { customerEmail: c.email }] }),
         LoanRequest.countDocuments({ $or: [{ customer: c._id }, { email: c.email }] }),
         Wishlist.countDocuments({ user: c._id }),
+        Sale.countDocuments({ customer: c._id, status: 'active' }),
       ]);
-      return { ...c, totalLeads, loanRequests, interestedProducts };
+      return { ...c, totalLeads, loanRequests, interestedProducts, purchaseCount };
     })
   );
 
@@ -39,7 +41,7 @@ exports.getOne = asyncHandler(async (req, res) => {
   const customer = await User.findById(req.params.id).lean();
   if (!customer || customer.role !== 'customer') return fail(res, 'Customer not found', 404);
 
-  const [leads, loans, wishlist] = await Promise.all([
+  const [leads, loans, wishlist, purchases] = await Promise.all([
     Lead.find({ $or: [{ customer: customer._id }, { customerEmail: customer.email }] })
       .populate('product', 'name category price images')
       .sort('-createdAt').lean(),
@@ -47,6 +49,7 @@ exports.getOne = asyncHandler(async (req, res) => {
       .populate('product', 'name category price')
       .sort('-createdAt').lean(),
     Wishlist.find({ user: customer._id }).populate('product', 'name category price images status').lean(),
+    Sale.find({ customer: customer._id }).populate('product', 'name category price images').sort('-soldDate').lean(),
   ]);
 
   ok(res, {
@@ -54,5 +57,6 @@ exports.getOne = asyncHandler(async (req, res) => {
     leadHistory: leads,
     loanRequests: loans,
     interestedProducts: wishlist.map((w) => w.product).filter(Boolean),
+    purchases,
   }, 'Customer detail');
 });
