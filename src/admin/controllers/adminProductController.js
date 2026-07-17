@@ -6,6 +6,7 @@ const Sale = require('../../models/Sale');
 const Reservation = require('../../models/Reservation');
 const { ok, fail } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
+const { logAction } = require('../../services/auditService');
 
 const EDITABLE = [
   'name', 'category', 'subcategory', 'brand', 'model', 'variant',
@@ -173,7 +174,28 @@ exports.update = asyncHandler(async (req, res) => {
     if (req.body.status === 'available') product.activeReservation = null;
   }
   await product.save();
+  logAction({ action: 'product_updated', entityType: 'product', entityId: product._id, entityLabel: product.name, user: req.user });
   ok(res, product, 'Product updated');
+});
+
+exports.duplicate = asyncHandler(async (req, res) => {
+  const source = await Product.findById(req.params.id).lean();
+  if (!source) return fail(res, 'Product not found', 404);
+
+  const clone = {};
+  for (const key of EDITABLE) {
+    if (source[key] !== undefined) clone[key] = source[key];
+  }
+  clone.name = `${source.name} (Copy)`;
+  clone.featured = false;
+
+  const created = await Product.create({
+    ...clone,
+    createdBy: req.user._id,
+    statusHistory: [{ status: 'available', note: `Duplicated from ${source.name}`, by: req.user._id }],
+  });
+  logAction({ action: 'product_created', entityType: 'product', entityId: created._id, entityLabel: created.name, user: req.user });
+  ok(res, created, 'Product duplicated', 201);
 });
 
 exports.setStatus = asyncHandler(async (req, res) => {

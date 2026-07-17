@@ -48,6 +48,10 @@ const productSchema = new mongoose.Schema(
     // when a sale/reservation is reversed.
     activeSale: { type: mongoose.Schema.Types.ObjectId, ref: 'Sale', default: null },
     activeReservation: { type: mongoose.Schema.Types.ObjectId, ref: 'Reservation', default: null },
+
+    // Which aging thresholds (30/60/90 days unsold) have already triggered
+    // a notification, so the daily aging job doesn't re-notify every run.
+    agingNotifiedBuckets: { type: [Number], default: [] },
   },
   { timestamps: true }
 );
@@ -72,5 +76,10 @@ productSchema.pre('save', function (next) {
 
 productSchema.statics.STATUSES = PRODUCT_STATUSES;
 productSchema.statics.CATEGORIES = PRODUCT_CATEGORIES;
+
+// Common admin queries: recent-first lists, and status-filtered recent-first
+// lists (Products page, aging checks, dashboards).
+productSchema.index({ createdAt: -1 });
+productSchema.index({ status: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Product', productSchema);

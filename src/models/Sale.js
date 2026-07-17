@@ -47,6 +47,10 @@ const saleSchema = new mongoose.Schema(
 // sold again to someone else...) but can only have ONE active sale at a
 // time. A plain unique index on `product` would reject that second sale —
 // this partial index only enforces uniqueness among active sales.
+// A plain index for "every sale this product has ever had" lookups
+// (Product Detail's Sale History card) — the partial unique index above
+// only covers active sales.
+saleSchema.index({ product: 1, soldDate: -1 });
 saleSchema.index({ product: 1 }, { unique: true, partialFilterExpression: { status: 'active' } });
 saleSchema.statics.PAYMENT_METHODS = PAYMENT_METHODS;
 saleSchema.statics.STATUSES = SALE_STATUSES;

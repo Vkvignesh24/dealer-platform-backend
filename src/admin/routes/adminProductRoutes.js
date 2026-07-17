@@ -3,6 +3,7 @@ const c = require('../controllers/adminProductController');
 router.get('/', c.list);
 router.get('/:id', c.getOne);
 router.put('/:id', c.update);
+router.post('/:id/duplicate', c.duplicate);
 router.patch('/:id/status', c.setStatus);
 router.patch('/:id/archive', c.archive);
 router.delete('/:id', c.remove);

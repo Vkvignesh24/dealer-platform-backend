@@ -49,6 +49,14 @@ const loanRequestSchema = new mongoose.Schema(
     bankBranch: { type: String, trim: true, maxlength: 150 },
     bankContactPerson: { type: String, trim: true, maxlength: 150 },
     bankRemarks: { type: String, maxlength: 1000 },
+    // Supporting documents (ID proof, salary slips, bank statements…)
+    documents: [
+      {
+        name: { type: String, required: true },
+        url: { type: String, required: true },
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
     statusHistory: [statusHistorySchema],
     notes: [noteSchema],
     // Set when a sale disburses this loan; cleared when that sale is

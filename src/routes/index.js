@@ -12,6 +12,7 @@ router.use('/customers', require('./customers'));
 router.use('/dashboard', require('./dashboard'));
 router.use('/sales', require('./sales'));
 router.use('/reservations', require('./reservations'));
+router.use('/notifications', require('./notifications'));
 
 // Admin console API — every route inside is already protected by verifyAdmin.
 router.use('/admin', require('../admin'));

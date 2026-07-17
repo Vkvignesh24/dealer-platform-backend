@@ -3,6 +3,7 @@ const Lead = require('../models/Lead');
 const Sale = require('../models/Sale');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { logAction } = require('../services/auditService');
 
 // Dealer/admin see the full inventory including sold items (they manage
 // it). Customers (and anonymous visitors) never see `sold` products in
@@ -221,6 +222,7 @@ exports.create = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
     statusHistory: [{ status: req.body.status || 'available', by: req.user._id }],
   });
+  logAction({ action: 'product_created', entityType: 'product', entityId: v._id, entityLabel: v.name, user: req.user });
   ok(res, v, 'Product created', 201);
 });
 
@@ -245,6 +247,7 @@ exports.update = asyncHandler(async (req, res) => {
     runValidators: true,
   });
   if (!v) return fail(res, 'Product not found', 404);
+  logAction({ action: 'product_updated', entityType: 'product', entityId: v._id, entityLabel: v.name, user: req.user });
   ok(res, v, 'Product updated');
 });
 

@@ -18,8 +18,8 @@ app.use(express.json({ limit: '2mb' }));
 app.use(mongoSanitize());
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
 
-const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 });
-app.use('/api/', limiter);
+// const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 300 });
+// app.use('/api/', limiter);
 
 
 app.get('/', (req, res) => {

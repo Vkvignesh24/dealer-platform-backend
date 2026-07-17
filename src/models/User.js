@@ -14,6 +14,11 @@ const userSchema = new mongoose.Schema(
       index: true,
     },
     active: { type: Boolean, default: true },
+    // Firebase Cloud Messaging token for push notifications — one active
+    // device at a time is enough for this app's scale; re-registering
+    // (e.g. new device, token refresh) simply overwrites it.
+    fcmToken: { type: String, default: null },
+    lastLoginAt: { type: Date, default: null },
 
     // Snapshot list kept in sync by saleController; Sale collection remains
     // the source of truth for reporting/analytics.

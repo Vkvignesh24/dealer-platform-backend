@@ -1,6 +1,7 @@
 const { initFirebase } = require('../config/firebase');
 const User = require('../models/User');
 const { fail } = require('../utils/respond');
+const { notify } = require('../services/notificationService');
 
 async function resolveUser(req) {
   const header = req.headers.authorization || '';
@@ -28,7 +29,22 @@ async function resolveUser(req) {
       email: (decoded.email || `${decoded.uid}@unknown.local`).toLowerCase(),
       name: decoded.name || decoded.email || 'User',
       role: 'customer',
+      lastLoginAt: new Date(),
     });
+    if (user.role === 'customer') {
+      notify({
+        audience: 'dealer',
+        type: 'customer_registered',
+        title: 'New Customer Registration',
+        body: `${user.name} just joined the platform`,
+        entityType: 'customer',
+        entityId: user._id,
+      });
+    }
+  } else if (!user.lastLoginAt || Date.now() - new Date(user.lastLoginAt).getTime() > 5 * 60 * 1000) {
+    // Throttled write — avoids hammering the DB on every single request
+    // while still giving the Profile page a meaningful "Last Login" value.
+    User.updateOne({ _id: user._id }, { lastLoginAt: new Date() }).catch(() => {});
   }
   if (user.active === false) {
     throw Object.assign(new Error('This account has been disabled.'), { status: 403 });

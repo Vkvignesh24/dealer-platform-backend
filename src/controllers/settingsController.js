@@ -15,6 +15,14 @@ exports.update = asyncHandler(async (req, res) => {
   for (const f of fields) {
     if (req.body[f] !== undefined) s[f] = req.body[f];
   }
+  // Nested groups are merged field-by-field so a partial update (e.g. just
+  // GST number) never wipes out the rest of the group.
+  const groups = ['business', 'contact', 'seo', 'integrations', 'branding'];
+  for (const g of groups) {
+    if (req.body[g] && typeof req.body[g] === 'object') {
+      s[g] = { ...(s[g]?.toObject ? s[g].toObject() : s[g] || {}), ...req.body[g] };
+    }
+  }
   await s.save();
   ok(res, s, 'Settings updated');
 });

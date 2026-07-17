@@ -53,6 +53,7 @@ const leadSchema = new mongoose.Schema(
 );
 
 leadSchema.index({ customerPhone: 1, product: 1, createdAt: -1 });
+leadSchema.index({ status: 1, createdAt: -1 });
 leadSchema.statics.STATUSES = LEAD_STATUSES;
 
 module.exports = mongoose.model('Lead', leadSchema);

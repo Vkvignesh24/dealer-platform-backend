@@ -30,5 +30,21 @@ exports.updateProfile = asyncHandler(async (req, res) => {
   return ok(res, u, 'Profile updated');
 });
 
+// Registers/refreshes this device's Firebase Cloud Messaging token so the
+// backend can push notifications (new lead, loan approved, etc.) to it.
+exports.registerFcmToken = asyncHandler(async (req, res) => {
+  const { token } = req.body;
+  if (!token) return fail(res, 'token is required', 400);
+  await User.findByIdAndUpdate(req.user._id, { fcmToken: token });
+  ok(res, { success: true }, 'Push token registered');
+});
+
+// Forgets this device's token — called on logout so a signed-out device
+// never receives another push meant for whoever logs in next.
+exports.removeFcmToken = asyncHandler(async (req, res) => {
+  await User.findByIdAndUpdate(req.user._id, { fcmToken: null });
+  ok(res, { success: true }, 'Push token removed');
+});
+
 
 

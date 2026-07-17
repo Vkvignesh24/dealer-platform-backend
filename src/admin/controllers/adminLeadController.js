@@ -1,6 +1,8 @@
 const Lead = require('../../models/Lead');
 const { ok, fail } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
+const { notify } = require('../../services/notificationService');
+const { logAction } = require('../../services/auditService');
 
 const STATUSES = ['new', 'contacted', 'interested', 'test_drive', 'visited', 'negotiation', 'booked', 'sold', 'lost'];
 
@@ -51,12 +53,32 @@ exports.update = asyncHandler(async (req, res) => {
     if (status !== lead.status) {
       lead.history.push({ status, at: new Date(), note: note || '' });
       lead.status = status;
+      notify({
+        audience: 'dealer',
+        type: 'lead_status_changed',
+        title: 'Lead Status Updated',
+        body: `${lead.customerName}'s lead moved to "${status.replace(/_/g, ' ')}"`,
+        entityType: 'lead',
+        entityId: lead._id,
+        createdBy: req.user._id,
+      });
+      if (lead.customer) {
+        notify({
+          target: lead.customer,
+          type: 'lead_status_changed',
+          title: 'Your Enquiry Was Updated',
+          body: `Your enquiry status is now "${status.replace(/_/g, ' ')}"`,
+          entityType: 'lead',
+          entityId: lead._id,
+        });
+      }
     }
   }
   if (note && String(note).trim()) {
     lead.notes.push({ text: String(note).trim(), at: new Date(), by: req.user._id });
   }
   await lead.save();
+  logAction({ action: 'lead_updated', entityType: 'lead', entityId: lead._id, entityLabel: lead.customerName, user: req.user });
   ok(res, lead, 'Lead updated');
 });
 

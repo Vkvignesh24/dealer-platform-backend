@@ -15,6 +15,51 @@ const settingsSchema = new mongoose.Schema(
       website: String,
     },
     primaryColor: { type: String, default: '#0F1B2D' },
+
+    // Business Information
+    business: {
+      gstNumber: String,
+      panNumber: String,
+      registrationNumber: String,
+    },
+
+    // Contact Information (in addition to the primary phone/email above)
+    contact: {
+      alternatePhone: String,
+      supportEmail: String,
+    },
+
+    // SEO
+    seo: {
+      metaTitle: String,
+      metaDescription: String,
+    },
+
+    // Integrations — credentials are stored as configured/not-configured
+    // flags plus the non-secret identifiers; actual API keys should live
+    // in environment variables, never in this document.
+    integrations: {
+      whatsappApi: {
+        enabled: { type: Boolean, default: false },
+        phoneNumberId: String,
+      },
+      razorpay: {
+        enabled: { type: Boolean, default: false },
+        keyId: String,
+      },
+      googleAnalytics: {
+        enabled: { type: Boolean, default: false },
+        measurementId: String,
+      },
+    },
+
+    // Branding
+    branding: {
+      favicon: String,
+      splashLogo: String,
+      appLogo: String,
+      appIcon: String,
+    },
   },
   { timestamps: true }
 );

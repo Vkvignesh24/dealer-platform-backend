@@ -4,6 +4,7 @@ const Lead = require('../models/Lead');
 const User = require('../models/User');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { notify } = require('../services/notificationService');
 
 const POPULATE_PRODUCT = { path: 'product', select: 'name brand category price images status' };
 const POPULATE_CUSTOMER = { path: 'customer', select: 'name email phone' };
@@ -99,6 +100,17 @@ exports.create = asyncHandler(async (req, res) => {
     .populate(POPULATE_PRODUCT)
     .populate(POPULATE_CUSTOMER)
     .lean();
+
+  notify({
+    audience: 'dealer',
+    type: 'product_reserved',
+    title: 'Product Reserved',
+    body: `${populated.product?.name || 'A product'} was reserved by ${populated.customer?.name || 'a customer'}`,
+    entityType: 'product',
+    entityId: product._id,
+    createdBy: req.user._id,
+  });
+
   ok(res, populated, 'Product reserved', 201);
 });
 

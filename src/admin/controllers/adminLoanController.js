@@ -1,6 +1,8 @@
 const LoanRequest = require('../../models/LoanRequest');
 const { ok, fail } = require('../../utils/respond');
 const asyncHandler = require('../../utils/asyncHandler');
+const { notify } = require('../../services/notificationService');
+const { logAction } = require('../../services/auditService');
 
 const STATUSES = ['new', 'documents_pending', 'under_review', 'bank_shared', 'approved', 'rejected', 'disbursed'];
 
@@ -50,6 +52,18 @@ exports.update = asyncHandler(async (req, res) => {
     loan.status = status;
     if (!Array.isArray(loan.statusHistory)) loan.statusHistory = [];
     loan.statusHistory.push({ status, at: new Date(), note: note || '', by: req.user._id });
+    if (loan.customer) {
+      notify({
+        target: loan.customer,
+        type: status === 'approved' ? 'loan_approved' : 'loan_status_changed',
+        title: status === 'approved' ? 'Loan Approved!' : 'Loan Status Updated',
+        body: status === 'approved'
+          ? `Great news — your loan for ₹${Number(loan.loanAmount).toLocaleString('en-IN')} has been approved`
+          : `Your loan application is now "${status.replace(/_/g, ' ')}"`,
+        entityType: 'loan',
+        entityId: loan._id,
+      });
+    }
   }
   if (!status && note && String(note).trim()) {
     if (!Array.isArray(loan.notes)) loan.notes = [];
@@ -60,6 +74,7 @@ exports.update = asyncHandler(async (req, res) => {
   if (bankContactPerson !== undefined) loan.bankContactPerson = bankContactPerson;
   if (bankRemarks !== undefined) loan.bankRemarks = bankRemarks;
   await loan.save();
+  logAction({ action: 'loan_updated', entityType: 'loan', entityId: loan._id, entityLabel: loan.name, user: req.user });
   ok(res, loan, 'Loan updated');
 });
 
@@ -74,4 +89,22 @@ exports.analytics = asyncHandler(async (req, res) => {
   const approvalRate = totalRequests ? Math.round((approved / totalRequests) * 1000) / 10 : 0;
 
   ok(res, { totalRequests, approved, rejected, pending, approvalRate, statusBreakdown: breakdown }, 'Loan analytics');
+});
+
+exports.addDocument = asyncHandler(async (req, res) => {
+  const { name, url } = req.body || {};
+  if (!name || !url) return fail(res, 'name and url are required', 400);
+  const loan = await LoanRequest.findById(req.params.id);
+  if (!loan) return fail(res, 'Loan request not found', 404);
+  loan.documents.push({ name, url, uploadedAt: new Date() });
+  await loan.save();
+  ok(res, loan, 'Document added', 201);
+});
+
+exports.removeDocument = asyncHandler(async (req, res) => {
+  const loan = await LoanRequest.findById(req.params.id);
+  if (!loan) return fail(res, 'Loan request not found', 404);
+  loan.documents = loan.documents.filter((d) => String(d._id) !== req.params.docId);
+  await loan.save();
+  ok(res, loan, 'Document removed');
 });

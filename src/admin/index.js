@@ -12,5 +12,6 @@ router.use('/loans', require('./routes/adminLoanRoutes'));
 router.use('/dealers', require('./routes/adminDealerRoutes'));
 router.use('/analytics', require('./routes/adminAnalyticsRoutes'));
 router.use('/notifications', require('./routes/adminNotificationRoutes'));
+router.use('/audit-logs', require('./routes/adminAuditRoutes'));
 
 module.exports = router;

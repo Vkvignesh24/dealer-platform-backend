@@ -2,6 +2,7 @@ const LoanRequest = require('../models/LoanRequest');
 const Product = require('../models/Product');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { notify } = require('../services/notificationService');
 
 exports.create = asyncHandler(async (req, res) => {
   const body = { ...req.body };
@@ -14,6 +15,16 @@ exports.create = asyncHandler(async (req, res) => {
   }
   if (req.user) body.customer = req.user._id;
   const v = await LoanRequest.create(body);
+
+  notify({
+    audience: 'dealer',
+    type: 'loan_created',
+    title: 'New Loan Request',
+    body: `${v.name} applied for a loan of ₹${Number(v.loanAmount).toLocaleString('en-IN')}`,
+    entityType: 'loan',
+    entityId: v._id,
+  });
+
   ok(res, v, 'Loan request submitted', 201);
 });
 
@@ -63,5 +74,19 @@ exports.updateStatus = asyncHandler(async (req, res) => {
     { new: true }
   );
   if (!v) return fail(res, 'Loan request not found', 404);
+
+  if (v.customer) {
+    notify({
+      target: v.customer,
+      type: status === 'approved' ? 'loan_approved' : 'loan_status_changed',
+      title: status === 'approved' ? 'Loan Approved!' : 'Loan Status Updated',
+      body: status === 'approved'
+        ? `Great news — your loan for ₹${Number(v.loanAmount).toLocaleString('en-IN')} has been approved`
+        : `Your loan application is now "${status.replace(/_/g, ' ')}"`,
+      entityType: 'loan',
+      entityId: v._id,
+    });
+  }
+
   ok(res, v, 'Status updated');
 });

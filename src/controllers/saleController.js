@@ -6,6 +6,8 @@ const LoanRequest = require('../models/LoanRequest');
 const User = require('../models/User');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { notify } = require('../services/notificationService');
+const { logAction } = require('../services/auditService');
 
 const POPULATE_PRODUCT = { path: 'product', select: 'name brand category price images status' };
 const POPULATE_CUSTOMER = { path: 'customer', select: 'name email phone' };
@@ -177,6 +179,18 @@ exports.create = asyncHandler(async (req, res) => {
   });
 
   const populated = await Sale.findById(sale._id).populate(POPULATE_PRODUCT).populate(POPULATE_CUSTOMER).lean();
+
+  notify({
+    audience: 'dealer',
+    type: 'sale_created',
+    title: 'Product Sold Successfully',
+    body: `${product.name} sold to ${customer.name}`,
+    entityType: 'sale',
+    entityId: sale._id,
+    createdBy: req.user._id,
+  });
+  logAction({ action: 'sale_created', entityType: 'sale', entityId: sale._id, entityLabel: `${product.name} → ${customer.name}`, user: req.user });
+
   ok(res, populated, 'Sale recorded', 201);
 });
 
@@ -290,5 +304,17 @@ exports.reverse = asyncHandler(async (req, res) => {
   );
 
   const populated = await Sale.findById(sale._id).populate(POPULATE_PRODUCT).populate(POPULATE_CUSTOMER).lean();
+
+  notify({
+    audience: 'dealer',
+    type: 'sale_reversed',
+    title: 'Sale Reversed',
+    body: `${populated.product?.name || 'A product'}'s sale was reversed: ${REASON_LABELS[reason]}`,
+    entityType: 'sale',
+    entityId: sale._id,
+    createdBy: req.user._id,
+  });
+  logAction({ action: 'sale_reversed', entityType: 'sale', entityId: sale._id, entityLabel: populated.product?.name, user: req.user });
+
   ok(res, populated, 'Sale reversed; product is available again');
 });

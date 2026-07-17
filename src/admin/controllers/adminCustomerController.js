@@ -24,13 +24,18 @@ exports.list = asyncHandler(async (req, res) => {
 
   const items = await Promise.all(
     customers.map(async (c) => {
-      const [totalLeads, loanRequests, interestedProducts, purchaseCount] = await Promise.all([
+      const [totalLeads, loanRequests, interestedProducts, purchaseCount, lifetimeAgg] = await Promise.all([
         Lead.countDocuments({ $or: [{ customer: c._id }, { customerEmail: c.email }] }),
         LoanRequest.countDocuments({ $or: [{ customer: c._id }, { email: c.email }] }),
         Wishlist.countDocuments({ user: c._id }),
         Sale.countDocuments({ customer: c._id, status: 'active' }),
+        Sale.aggregate([
+          { $match: { customer: c._id, status: 'active' } },
+          { $group: { _id: null, value: { $sum: '$salePrice' } } },
+        ]),
       ]);
-      return { ...c, totalLeads, loanRequests, interestedProducts, purchaseCount };
+      const lifetimeValue = lifetimeAgg[0]?.value || 0;
+      return { ...c, totalLeads, loanRequests, interestedProducts, purchaseCount, lifetimeValue };
     })
   );
 

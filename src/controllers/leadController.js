@@ -2,6 +2,7 @@ const Lead = require('../models/Lead');
 const Product = require('../models/Product');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { notify } = require('../services/notificationService');
 
 const POPULATE = { path: 'product', select: 'name brand category price images' };
 
@@ -54,6 +55,16 @@ exports.create = asyncHandler(async (req, res) => {
     status: 'new',
     history: [{ status: 'new' }],
   });
+
+  notify({
+    audience: 'dealer',
+    type: 'lead_created',
+    title: 'New Lead Received',
+    body: `${customerName} is interested in ${v.name}`,
+    entityType: 'lead',
+    entityId: lead._id,
+  });
+
   ok(res, lead, 'Enquiry submitted', 201);
 });
 
@@ -64,6 +75,14 @@ exports.update = asyncHandler(async (req, res) => {
   if (status && lead.status !== status) {
     lead.history.push({ status, note });
     lead.status = status;
+    notify({
+      audience: 'dealer',
+      type: 'lead_status_changed',
+      title: 'Lead Status Updated',
+      body: `${lead.customerName}'s lead moved to "${status.replace(/_/g, ' ')}"`,
+      entityType: 'lead',
+      entityId: lead._id,
+    });
   }
   if (response !== undefined) lead.response = response;
   await lead.save();
